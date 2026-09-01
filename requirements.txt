@@ -1,0 +1,30 @@
+# Data Analysis
+pandas
+numpy
+
+# Data Visualization
+matplotlib
+seaborn
+
+# Statistics
+scipy
+statsmodels
+
+# Machine Learning
+scikit-learn
+xgboost
+
+# Jupyter / Notebooks
+jupyter
+notebook
+ipykernel
+
+# PostgreSQL
+psycopg[binary]
+SQLAlchemy
+
+# File & Data Utilities
+openpyxl
+python-dateutil
+requests
+tqdm
