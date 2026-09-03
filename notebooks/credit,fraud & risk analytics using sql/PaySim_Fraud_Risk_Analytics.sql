@@ -1,5 +1,5 @@
---Day 2:
 ----Level-1:Beginner
+--Day 2:02/09/2026
 --1.Count total transactions
 SELECT COUNT(*) FROM paysim;
 --2.Calculate total transaction amount
@@ -49,5 +49,16 @@ select type,
 from paysim 
 group by type
 order by average_transaction_amount  desc;
+--Day 3: 03/09/2026
+--11. Classify transactions by amount 
+select step,
+       type,
+	   amount,
+	   case 
+	   when amount<1000 then 'Low'
+	   when amount between 1000 and 10000 then 'Medium'
+	   else 'High'
+	   end as amount_category 
+from paysim;
 
        
