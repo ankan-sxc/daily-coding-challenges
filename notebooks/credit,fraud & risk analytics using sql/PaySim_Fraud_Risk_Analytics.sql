@@ -25,4 +25,29 @@ SELECT
     100.0 * SUM(CASE WHEN isFraud = 1 THEN 1 ELSE 0 END) / COUNT(*) AS fraud_rate
 FROM paysim
 GROUP BY type;
---7.
+--7.The total monetary amount associated with confirmed fraudulent transactions for each transaction type.
+select type,
+       sum(amount) as total_fraud_amount
+from paysim
+where isFraud=1
+group by type;
+--8.The average transaction amount of confirmed fraudulent transactions for each transaction type.
+select type,
+       avg(amount) as average_fraud_amount
+from paysim
+where isFraud=1
+group by type;
+--9. Find transaction types with highest volume
+select type,
+       count(*) as transaction_count 
+from paysim 
+group by type
+order by transaction_count desc;
+--10.Find the transaction types with the highest average transaction amount.
+select type,
+       avg(amount) as average_transaction_amount 
+from paysim 
+group by type
+order by average_transaction_amount  desc;
+
+       
