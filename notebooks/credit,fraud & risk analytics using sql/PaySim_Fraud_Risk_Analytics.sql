@@ -1,3 +1,4 @@
+
 ----Level-1:Beginner
 --Day 2:02/09/2026
 --1.Count total transactions
@@ -60,5 +61,30 @@ select step,
 	   else 'High'
 	   end as amount_category 
 from paysim;
+--Day5:05/09/2026 
+--12.Calculate fraud rate by transaction type 
+SELECT
+    type,
+    COUNT(*) AS transaction_count,
+    SUM(CASE WHEN isFraud = 1 THEN 1 ELSE 0 END) AS fraud_transaction_count,
+    100.0 * SUM(CASE WHEN isFraud = 1 THEN 1 ELSE 0 END) / COUNT(*) AS fraud_rate
+FROM paysim
+GROUP BY type;
+--13.Compare fraudulent vs non-fraudulent transaction amounts
+WITH transaction_segments AS (
+    SELECT
+        amount,
+        CASE
+            WHEN isFraud = 1 THEN 'Fraud'
+            ELSE 'Non-Fraud'
+        END AS fraud_status
+    FROM paysim
+)
 
-       
+SELECT
+    fraud_status,
+    COUNT(*) AS transaction_count,
+    SUM(amount) AS total_amount,
+    AVG(amount) AS average_amount
+FROM transaction_segments
+GROUP BY fraud_status;
