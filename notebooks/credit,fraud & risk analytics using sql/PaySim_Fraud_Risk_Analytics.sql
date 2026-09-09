@@ -228,3 +228,25 @@ from paysim
 group by nameOrig 
 having count(*) > 100 and sum(case when isFraud=1 then 1 else 0 end) > 0
 order by fraudulent_transaction desc;
+---DAY-8:09/09/2026
+--Receiver analysis
+--26.Receivers with highest transaction volume
+--Find customers who:
+--Have made more than 100 transactions :
+--Have a fraud rate greater than 5% :
+select nameDest,
+       count(*) as transaction_count,
+	   sum(case when isFraud=1 then 1 else 0 end ) as fraud_transaction,
+	   100.0*sum(case when isFraud=1 then 1 else 0 end )/count(*) as fraud_rate
+from paysim 
+group by nameDest
+having count(*) > 100.0 and 100*sum(case when isFraud=1 then 1 else 0 end )/count(*) >5
+order by fraud_rate desc;
+--27.Receivers receiving the highest amount 
+--Find the top 10 receivers (nameDest) with the highest transaction volume.
+select nameDest,
+       count(*) as transaction_Count
+from paysim
+group by nameDest
+order by transaction_count desc
+limit 10;
