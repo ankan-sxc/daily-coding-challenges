@@ -250,3 +250,156 @@ from paysim
 group by nameDest
 order by transaction_count desc
 limit 10;
+--Day 26: 26/09/2026
+--28.Receivers associated with fraud 
+--Find the top 10 receivers (nameDest) with the highest number of confirmed fraud transactions.
+select nameDest,
+       sum(case when isFraud=1 then 1 else 0 end) as total_transaction_count
+from paysim
+group by nameDest
+order by total_transaction_count desc
+limit 10;
+--29.Receiver Fraud Rate
+select nameDest,
+       count(*) as total_transaction_count,
+	   sum(case when isFraud=1 then 1 else 0 end) as fraud_transaction_count,
+	   sum(case when isFraud=1 then 1 else 0 end)*100.0/count(*) as fraud_rate
+from paysim
+group by nameDest
+order by fraud_rate desc limit 10;
+--30.High-Volume vs High-Risk Receivers
+---At least 100 transactions
+--Fraud rate greater than 5%
+select nameDest,
+       count(*) as total_transaction_count,
+	   sum(case when isFraud=1 then 1 else 0 end) as fraud_transaction_count,
+	   sum(case when isFraud=1 then 1 else 0 end)*100.0/count(*) as fraud_rate
+from paysim
+group by nameDest
+having count(*)>=100 and
+sum(case when isFraud=1 then 1 else 0 end)*100.0/count(*)>5;
+--31.Customer Risk Segmentation
+with customer_summary as
+(
+select nameOrig,
+       count(*) as total_transaction_count,
+	   sum(case when isFraud=1 then 1 else 0 end) as fraud_transaction_count,
+	   sum(case when isFraud=1 then 1 else 0 end)*100.0/count(*) as fraud_rate
+from paysim
+group by nameOrig
+)
+select nameOrig,
+       total_transaction_count,
+	   fraud_transaction_count,
+	   fraud_rate, 
+	   case 
+	   when fraud_rate=0 then 'Low Risk'
+	   when fraud_rate > 0 and fraud_rate <=5 then 'Medium Risk'
+	   else 'High Risk'
+	   end as risk_segment
+from customer_summary;
+--32.High-Value Transaction Flags
+select step,
+       type,
+       nameOrig,
+       amount,
+       isFraud,
+	   case 
+	   when amount > 10000 then 'High Value'
+	   else 'Normal Value'
+	   end as high_value_flag
+from summary;
+--33.Multi-Condition Fraud Rule
+select type,
+       amount,
+	   isFraud,
+	   case 
+	   when type in('TRANSFER','CASH_OUT') and amount>10000 then 'Rule Hit'
+	   else 'No Rule Hit' 
+	   end as rule_flag
+from paysim;
+--34.Rule hit rate 
+select count(*) as total_transactions,
+SUM(
+    CASE
+        WHEN type IN ('TRANSFER', 'CASH_OUT')
+             AND amount > 10000
+        THEN 1
+        ELSE 0
+    END
+) as rule_hit_transactions,
+(SUM(
+    CASE
+        WHEN type IN ('TRANSFER', 'CASH_OUT')
+             AND amount > 10000
+        THEN 1
+        ELSE 0
+    END
+)*100.0)/count(*) as rule_hit_rate
+from paysim;
+--35.Compare rule flags against isFraud
+select sum(case
+           when type in ('TRANSFER','CASH_OUT') and amount >10000
+		   then 1 else 0 end) as total_rule_hit_transaction,
+       sum(case
+           when type in ('TRANSFER','CASH_OUT') and amount >10000 and isFraud=1
+		   then 1 else 0 end) rule_hit_fraud_transactions,
+	   (sum(case
+           when type in ('TRANSFER','CASH_OUT') and amount >10000 and isFraud=1
+		   then 1 else 0 end)*100.0)/sum(case
+           when type in ('TRANSFER','CASH_OUT') and amount >10000
+		   then 1 else 0 end) as rule_hit_fraud_rate
+from paysim;
+--36.False positives 
+with rule_hits as
+(
+select isFraud,
+       case 
+       when type in ('TRANSFER','CASH_OUT') and amount> 10000 then 1 else 0
+	   end as rule_hit_flag
+	   from paysim
+)
+select sum(rule_hit_flag) as total_rule_hit_transactions,
+       sum (case when rule_hit_flag=1 and isFraud=0 then 1 else 0 end) as false_positive,
+	   (sum (case when rule_hit_flag=1 and isFraud=0 then 1 else 0 end)*100.0)/nullif(sum(rule_hit_flag),0)as false_positive_rate
+	   from rule_hits;
+--37.False Negative
+WITH rule_hits AS
+(
+    SELECT
+        isFraud,
+        CASE
+            WHEN type IN ('TRANSFER', 'CASH_OUT')
+                 AND amount > 10000
+            THEN 1
+            ELSE 0
+        END AS rule_hit_flag
+    FROM paysim
+)
+SELECT
+    SUM(CASE WHEN isFraud = 1 THEN 1 ELSE 0 END)
+        AS total_fraud_transactions,
+
+    SUM(
+        CASE
+            WHEN isFraud = 1
+                 AND rule_hit_flag = 0
+            THEN 1
+            ELSE 0
+        END
+    ) AS false_negative_transactions,
+
+    SUM(
+        CASE
+            WHEN isFraud = 1
+                 AND rule_hit_flag = 0
+            THEN 1
+            ELSE 0
+        END
+    ) * 100.0
+    / NULLIF(
+        SUM(CASE WHEN isFraud = 1 THEN 1 ELSE 0 END),
+        0
+    ) AS false_negative_rate
+
+FROM rule_hits;
