@@ -403,3 +403,4 @@ SELECT
     ) AS false_negative_rate
 
 FROM rule_hits;
+--38.Fraud Capture Rate
