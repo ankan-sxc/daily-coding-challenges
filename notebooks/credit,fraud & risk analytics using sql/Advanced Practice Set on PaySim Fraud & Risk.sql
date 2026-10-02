@@ -42,3 +42,44 @@ select nameOrig,
 	   end as velocity_flag
 from transaction_gaps;
 --5. Find the top 1% of transactions by amount, without hardcoding a dollar threshold
+with ranked_transactions as
+(select nameOrig,
+       amount,
+	   type,
+	   isFraud,
+	   percent_rank() over (order by amount) as percent_rank
+from paysim)
+select * from ranked_transactions
+where percent_rank>0.99 and isFraud=1;
+--6.Find transactions where the amount exceeds that account's own average — using a
+--correlated subquery this time, not a window function
+select p1.nameOrig,
+       p1.type, 
+	   p1.isFraud,
+	   p1.amount 
+from paysim p1
+where p1.amount>(
+select avg(p2.amount) from paysim p2 where p1.nameOrig=p2.nameOrig
+);
+--Another approach
+WITH account_avg AS (
+    SELECT
+        nameOrig,
+        AVG(amount) AS avg_amount
+    FROM paysim
+    GROUP BY nameOrig
+)
+SELECT
+    p.nameOrig,
+    p.type,
+    p.isFraud,
+    p.amount,
+    a.avg_amount
+FROM paysim p
+JOIN account_avg a
+    ON p.nameOrig = a.nameOrig
+WHERE p.amount > a.avg_amount;
+--Q.7:Detect structuring: accounts sending 3+ transactions each between 180,000
+--199,999 (just under the flagging threshold) within a short window
+select nameOrig,
+       
