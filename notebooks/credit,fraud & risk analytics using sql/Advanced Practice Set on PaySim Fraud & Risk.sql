@@ -81,5 +81,50 @@ JOIN account_avg a
 WHERE p.amount > a.avg_amount;
 --Q.7:Detect structuring: accounts sending 3+ transactions each between 180,000
 --199,999 (just under the flagging threshold) within a short window
+with qualifying_transaction as
+(select nameOrig,
+       step,
+	   amount,
+	   type,
+	   isFraud,
+	   count(*) as qualifying_transactions
+from paysim 
+where amount>=180000 and amount < 200000),
+transaction_gaps as
+(
 select nameOrig,
-       
+       step,
+	   amount,
+	   type,
+	   isFraud,
+	   lag(step) over (partition by namOrig order by step) as previous_steps
+from qualifying_transactions
+)
+select nameOrig,
+       step,
+	   amount,
+	   type,
+	   isFraud,
+	   previous_steps,
+	   step - previous_steps as step_gap
+from transaction_gaps;
+
+
+
+--Q.8:.Fraud rate (share of transactions that are fraudulent) by transaction type. 
+SELECT
+    type,
+    AVG(isFraud::numeric) AS fraud_rate
+FROM paysim
+GROUP BY type;
+--Q.9:.Find transactions where the recorded balances don't reconcile: 
+-- oldbalanceOrg - amount <> newbalanceOrig .
+select nameOrig,
+       type,
+	   amount,
+	   oldbalanceOrg,
+	   newbalanceOrig,
+	   isFraud
+from paysim 
+where oldbalanceOrg - amount <> newbalanceOrig;
+--Q.10:For each account, return only its single largest transaction. 
