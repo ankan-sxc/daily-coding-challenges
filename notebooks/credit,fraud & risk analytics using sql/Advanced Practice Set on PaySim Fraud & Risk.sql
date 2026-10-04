@@ -128,3 +128,15 @@ select nameOrig,
 from paysim 
 where oldbalanceOrg - amount <> newbalanceOrig;
 --Q.10:For each account, return only its single largest transaction. 
+with ranked_transactions as 
+(
+select nameOrig,
+       amount,
+	   type,
+	   step, 
+	   isFraud,
+	   row_number() over (partition by nameOrig order by amount desc) as rnk_transaction
+from paysim
+)
+select * from ranked_transactions
+where rnk_transaction=1;
