@@ -127,6 +127,7 @@ select nameOrig,
 	   isFraud
 from paysim 
 where oldbalanceOrg - amount <> newbalanceOrig;
+--Date: 05/10/2026
 --Q.10:For each account, return only its single largest transaction. 
 with ranked_transactions as 
 (
@@ -140,3 +141,55 @@ from paysim
 )
 select * from ranked_transactions
 where rnk_transaction=1;
+--11.Compute the average gap (in steps) between an account's consecutive transactions — a
+--per-account "normal velocity" baseline. 
+with transaction_velocity as
+(
+select nameOrig,
+       step,
+	   lag(step) over (partition by nameOrig Order By step) as previous_step
+from paysim
+)
+select nameOrig,
+       avg(step-previous_step) as Average_Step_Gap
+from transaction_velocity
+group by nameOrig;
+--12. Find TRANSFER s immediately followed by a CASH_OUT from the same account,
+--one step later — the canonical PaySim fraud chain.
+with transaction_sequence as
+(
+select nameOrig,
+       step,
+	   type, 
+	   amount,
+	   lead(step) over (partition by nameOrig order by step) as next_step,
+	   lead (type) over (partition by nameOrig Order by step) as next_type,
+	   lead(amount) over (partition by nameOrig order by step) as next_amoiunt
+from paysim
+)
+select * from transaction_sequence
+where type= 'TRANSFER' and next_type = 'CASH_OUT' and  next_step=step+1;
+--13.Compute a z-score for each transaction's amount relative to its own type, and return
+--anything with |z| > 3.
+with z_score_calculation as(
+select amount,
+       avg(amount) over (partition by type) as type_avg,
+       stddev(amount) over (partition by type) as type_std
+from paysim
+)
+select amount,
+       (amount - type_avg)/type_std as z_score
+from z_score_calculation
+where abs((amount - type_avg)/type_std)>3;
+--14. Find accounts with 3 or more transactions where amount > oldbalanceOrg :
+--repeated attempts that should have failed on insufficient funds.
+SELECT
+    nameOrig,
+    COUNT(*) AS insufficient_funds_attempts
+FROM paysim
+WHERE amount > oldbalanceOrg
+GROUP BY nameOrig
+HAVING COUNT(*) >= 3
+ORDER BY insufficient_funds_attempts DESC;
+--15.Using a CTE, isolate WHERE amount > TRANSFER s over 100,000, 
+--then find which of those destinationaccounts went on to CASH_OUT .
