@@ -193,3 +193,27 @@ HAVING COUNT(*) >= 3
 ORDER BY insufficient_funds_attempts DESC;
 --15.Using a CTE, isolate WHERE amount > TRANSFER s over 100,000, 
 --then find which of those destinationaccounts went on to CASH_OUT .
+WITH large_transfers AS
+(
+    SELECT
+        nameOrig,
+        nameDest,
+        step,
+        amount
+    FROM paysim
+    WHERE type = 'TRANSFER'
+      AND amount > 100000
+)
+SELECT
+    l.nameOrig AS transfer_sender,
+    l.nameDest AS destination_account,
+    l.step AS transfer_step,
+    l.amount AS transfer_amount,
+    p.step AS cashout_step,
+    p.amount AS cashout_amount
+FROM large_transfers l
+JOIN paysim p
+    ON l.nameDest = p.nameOrig
+WHERE p.type = 'CASH_OUT'
+  AND p.step > l.step
+ORDER BY l.step, p.step;
