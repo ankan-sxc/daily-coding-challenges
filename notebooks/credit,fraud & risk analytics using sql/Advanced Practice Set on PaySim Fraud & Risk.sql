@@ -217,3 +217,45 @@ JOIN paysim p
 WHERE p.type = 'CASH_OUT'
   AND p.step > l.step
 ORDER BY l.step, p.step;
+--16. For each step , what share of transactions are CASH_OUT vs. everything else? 
+select step,
+       count(*) as total_transactions,
+	   sum (case when type='CASH_OUT' then 1 else 0 end) as cashout_transactions,
+	   sum (case when type='CASH_OUT' then 1 else 0 end)/ count(*) as cashou_share
+from paysim
+group by step;
+--17. Median transaction amount per type
+select type,
+       percentile_cont(0.5) within group (order by amount) as meadian_amount
+from paysim
+group by type;
+/*18. Debugging:Fix this — meant to show each account alongside its average transaction amount:
+SELECT nameOrig, amount, AVG(amount)
+FROM transactions
+GROUP BY nameOrig;*/
+select nameOrig,
+       amount,
+	   avg(amount) over (partition by nameOrig ) as average_transaction_amount
+from paysim;
+/*
+19.Debugging: Fix this - meant to flag accounts with more than 10 transactions:
+SELECT nameOrig, COUNT(*) AS txn_count
+FROM transactions
+WHERE COUNT(*) > 10
+GROUP BY nameOrig
+*/
+select nameOrig,
+       count(*) as txn_count
+from paysim
+group by nameOrig
+having count(*)>3;
+/*20.Debugging: This is meant to rank each account's transactions by amount, but every
+row comes back ranked 1:
+SELECT nameOrig, amount,
+RANK() OVER (PARTITION BY nameOrig) AS amt_rank
+FROM transactions;
+*/
+SELECT nameOrig, 
+       amount,
+       RANK() OVER (PARTITION BY nameOrig order by amount) AS amt_rank
+FROM paysim;
