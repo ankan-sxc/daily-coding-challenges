@@ -1,3 +1,4 @@
+
 ----Level-1:Beginner
 --Day 2:02/09/2026
 --1.Count total transactions
@@ -404,3 +405,128 @@ SELECT
 
 FROM rule_hits;
 --38.Fraud Capture Rate
+--How much of the actual fraud does our rule successfully capture?
+WITH fraud_metrics AS (
+    SELECT
+        COUNT(*) FILTER (
+            WHERE isFraud = 1
+        ) AS total_actual_fraud,
+
+        COUNT(*) FILTER (
+            WHERE isFraud = 1
+              AND type IN ('TRANSFER', 'CASH_OUT')
+              AND amount > 10000
+        ) AS fraud_captured
+    FROM paysim
+)
+SELECT
+    total_actual_fraud,
+    fraud_captured,
+    ROUND(
+        100.0 * fraud_captured
+        / NULLIF(total_actual_fraud, 0),
+        2
+    ) AS fraud_capture_rate_percent
+FROM fraud_metrics;
+--39.Rule performance by transaction type
+WITH rule_performance AS (
+    SELECT
+        type,
+        COUNT(*) AS total_transactions,
+
+        COUNT(*) FILTER (
+            WHERE isFraud = 1
+        ) AS actual_fraud,
+
+        COUNT(*) FILTER (
+            WHERE type IN ('TRANSFER', 'CASH_OUT')
+              AND amount > 10000
+        ) AS rule_hits,
+
+        COUNT(*) FILTER (
+            WHERE isFraud = 1
+              AND type IN ('TRANSFER', 'CASH_OUT')
+              AND amount > 10000
+        ) AS fraud_captured
+
+    FROM paysim
+    GROUP BY type
+)
+SELECT
+    type,
+    total_transactions,
+    actual_fraud,
+    rule_hits,
+    fraud_captured,
+
+    ROUND(
+        100.0 * fraud_captured
+        / NULLIF(actual_fraud, 0),
+        2
+    ) AS fraud_capture_rate_percent
+
+FROM rule_performance
+ORDER BY fraud_capture_rate_percent DESC NULLS LAST;
+--40. Explain whether a rule is actually useful 
+WITH rule_evaluation AS (
+    SELECT
+        type,
+        COUNT(*) AS total_transactions,
+
+        COUNT(*) FILTER (
+            WHERE isFraud = 1
+        ) AS actual_fraud,
+
+        COUNT(*) FILTER (
+            WHERE type IN ('TRANSFER', 'CASH_OUT')
+              AND amount > 10000
+        ) AS rule_hits,
+
+        COUNT(*) FILTER (
+            WHERE isFraud = 1
+              AND type IN ('TRANSFER', 'CASH_OUT')
+              AND amount > 10000
+        ) AS true_positives,
+
+        COUNT(*) FILTER (
+            WHERE isFraud = 0
+              AND type IN ('TRANSFER', 'CASH_OUT')
+              AND amount > 10000
+        ) AS false_positives,
+
+        SUM(amount) FILTER (
+            WHERE isFraud = 1
+              AND type IN ('TRANSFER', 'CASH_OUT')
+              AND amount > 10000
+        ) AS fraud_value_captured
+
+    FROM paysim
+    GROUP BY type
+)
+SELECT
+    type,
+    total_transactions,
+    actual_fraud,
+    rule_hits,
+    true_positives,
+    false_positives,
+
+    ROUND(
+        100.0 * true_positives
+        / NULLIF(actual_fraud, 0), 2
+    ) AS fraud_capture_rate_pct,
+
+    ROUND(
+        100.0 * true_positives
+        / NULLIF(rule_hits, 0), 2
+    ) AS precision_pct,
+
+    ROUND(
+        100.0 * false_positives
+        / NULLIF(rule_hits, 0), 2
+    ) AS false_positive_rate_among_alerts_pct,
+
+    COALESCE(fraud_value_captured, 0) AS fraud_value_captured
+
+FROM rule_evaluation
+ORDER BY fraud_value_captured DESC;
