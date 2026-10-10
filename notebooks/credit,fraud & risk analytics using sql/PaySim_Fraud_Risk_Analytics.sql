@@ -530,3 +530,42 @@ SELECT
 
 FROM rule_evaluation
 ORDER BY fraud_value_captured DESC;
+--Date:10/10/2026
+--LEVEL 3 — Intermediate Risk Analyst
+--41.Customer-level transaction summary 
+select nameOrig,
+       count(*) as total_transactions,
+	   sum(amount) as total_transaction_amount,
+	   avg(amount) as average_transaction_amount,
+	   sum (case when isFraud=1 then 1 else 0 end) as fraud_transaction_count,
+	   min(step) as first_transaction_step,
+	   max(step) as last_transaction_step
+from paysim
+group by nameOrig;
+--42.Customer Fraud Summary
+select nameOrig,
+       sum(case
+	          when isFraud=1 then 1 else 0
+		   end
+		   ) as total_fraud_transaction_count,
+	   sum(case 
+	          when isFraud=1 then amount else 0
+		   end
+	      ) as total_fruad_amount,
+	   avg(case 
+	          when isFraud=1 then amount else NULL
+	       end 
+		   ) as average_fraud_amount,
+		max(case 
+		       when isFraud=1 then step else null
+		    end
+			) as latest_fraud_step
+from paysim
+group by nameOrig;
+--43.Question 43 — Customer Risk Profile
+with customer_metrics as(
+select nameOrig,
+       count(*) as total_transactions,
+	   
+)
+	   
