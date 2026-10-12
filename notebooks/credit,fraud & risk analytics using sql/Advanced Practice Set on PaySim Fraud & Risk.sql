@@ -259,3 +259,135 @@ SELECT nameOrig,
        amount,
        RANK() OVER (PARTITION BY nameOrig order by amount) AS amt_rank
 FROM paysim;
+--Date: 07/10/2026
+--LEVEL: Advanced - Fraud Chains, Multi-Signal Risk, Scale
+--21.Using a recursive CTE, trace transaction chains up to 3 hops (A→B→C): an account
+--receives, then forwards.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--22.Identify possible mule accounts: high fan-in (many distinct senders) followed by a
+--fast, near-total cash-out.
+wi
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--23.Flag accounts with 3+ over-limit attempts (amount > oldbalanceOrg ) inside any
+--rolling 24-step window.
+with over_limit_txn as(
+select nameOrig,
+       step,
+	   amount,
+	   oldbalanceOrg
+from paysim
+where amount > oldbalanceOrg
+),
+rolling_counts as
+(select nameOrig,
+       step,
+       count(*) over (partition by nameOrig order by step 
+	                  range between 24 preceding and current row ) as rolling_count
+from over_limit_txn
+)
+select nameOrig,
+       step,
+	   rolling_count
+from rolling_counts
+where rolling_count>=3;
+--24.Identify high-risk merchants: destinations that receive disproportionately often
+--from accounts with a fraud history, even though the merchant itself is never isFraud = 1 
+-- Identify high-risk destination accounts
+WITH fraud_history_senders AS (
+    SELECT DISTINCT nameOrig
+    FROM paysim
+    WHERE isFraud = 1
+),
+
+fraud_history_exposure AS (
+    SELECT
+        p.nameDest AS destination_account,
+        COUNT(*) AS suspicious_transaction_count,
+        COUNT(DISTINCT f.nameOrig) AS distinct_fraud_history_senders,
+        SUM(p.amount) AS suspicious_incoming_amount
+    FROM paysim p
+    JOIN fraud_history_senders f
+        ON p.nameOrig = f.nameOrig
+    GROUP BY p.nameDest
+),
+
+total_incoming AS (
+    SELECT
+        nameDest AS destination_account,
+        COUNT(*) AS total_incoming_transactions,
+        SUM(amount) AS total_incoming_amount
+    FROM paysim
+    GROUP BY nameDest
+),
+
+fraud_labelled_destinations AS (
+    SELECT DISTINCT nameOrig AS destination_account
+    FROM paysim
+    WHERE isFraud = 1
+)
+
+SELECT
+    f.destination_account,
+    f.suspicious_transaction_count,
+    f.distinct_fraud_history_senders,
+    f.suspicious_incoming_amount,
+    t.total_incoming_transactions,
+    t.total_incoming_amount,
+
+    ROUND(
+        100.0 * f.suspicious_transaction_count
+        / NULLIF(t.total_incoming_transactions, 0),
+        2
+    ) AS suspicious_exposure_percentage
+
+FROM fraud_history_exposure f
+JOIN total_incoming t
+    ON f.destination_account = t.destination_account
+
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM fraud_labelled_destinations d
+    WHERE d.destination_account = f.destination_account
+)
+
+ORDER BY
+    suspicious_exposure_percentage DESC,
+    f.distinct_fraud_history_senders DESC;
