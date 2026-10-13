@@ -391,3 +391,68 @@ WHERE NOT EXISTS (
 ORDER BY
     suspicious_exposure_percentage DESC,
     f.distinct_fraud_history_senders DESC;
+--25. For each account, compute a running average and running max of transaction amount
+--up to and including the current one (ordered by step ) — "how does this compare to what
+--I've seen from this account so far," which is the shape real-time scoring actually needs.
+select nameOrig,
+       step,
+	   amount,
+	   avg(amount) over (partition by nameOrig order by step 
+	                    rows between unbounded preceding and current row) as running_avg_amount,
+	   max(amount) over (partition by nameOrig order by step 
+	                     rows between unbounded preceding and current row) as running_max_amount
+from paysim;
+--26. Detect a structuring ring: 3+ distinct origin accounts all paying 
+-- the same destination, each just under 200,000, within a tight step window.
+SELECT
+    nameDest,
+    FLOOR(step / 24.0) AS step_bucket,
+    COUNT(DISTINCT nameOrig) AS distinct_sender_accounts,
+    COUNT(*) AS qualifying_transaction_count,
+    SUM(amount) AS total_transaction_amount
+FROM paysim
+WHERE amount BETWEEN 150000 AND 199999
+GROUP BY
+    nameDest,
+    FLOOR(step / 24.0)
+HAVING COUNT(DISTINCT nameOrig) >= 3
+ORDER BY
+    distinct_sender_accounts DESC,
+    qualifying_transaction_count DESC;
+--27.Write a single-pass query — no correlated subquery — that returns every account's
+-- transaction count, total amount, and fraud rate. It needs to hold up on 100M+ rows.
+select
+      nameOrig,
+	  count(*) as transaction_count,
+	  sum(amount) as total_amount,
+	  avg(isFraud::numeric) as fraud_rate
+from paysim
+group by nameOrig;
+--28.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--29.Build a composite risk score per transaction from amount z-score, account velocity,
+-- and destination type (merchant vs. customer), then return the top 100.
+
