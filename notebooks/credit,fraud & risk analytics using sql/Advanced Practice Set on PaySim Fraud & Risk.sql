@@ -455,4 +455,15 @@ group by nameOrig;
 
 --29.Build a composite risk score per transaction from amount z-score, account velocity,
 -- and destination type (merchant vs. customer), then return the top 100.
-
+with z_score as
+(
+select nameOrig,
+       nameDest,
+	   step,
+	   type,
+	   amount,
+	   avg(amount)over (partition by nameOrig ) as mean_amount,
+	   stddev_pop(amount) over(partition by nameOrig) as sd_amount,
+	   (amount - avg(amount)over (partition by nameOrig ))/nullif(stddev_pop(amount)over(partition by nameOrig),0) as zscore
+from paysim
+)
