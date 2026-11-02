@@ -562,10 +562,27 @@ select nameOrig,
 			) as latest_fraud_step
 from paysim
 group by nameOrig;
---43.Question 43 — Customer Risk Profile
+--43.Customer Risk Profile
 with customer_metrics as(
 select nameOrig,
        count(*) as total_transactions,
-	   
+	   sum(case 
+	          when isFraud= 1 then 1 else 0
+		   end
+		  ) as total_fraud_transactions,
+	   (100.0*sum(case 
+	          when isFraud= 1 then 1 else 0
+		   end))/count(*) as fraud_rate
+from paysim
+group by nameOrig
 )
-	   
+select nameOrig,
+       total_transactions,
+	   total_fraud_transactions,
+	   fraud_rate,
+	   case 
+	      when fraud_rate< 1 then 'Low Risk'
+		  when fraud_rate >=1 and fraud_rate <5 then 'Medium Risk'
+		  when fraud_rate >=5 then 'High Risk'
+	   end as risk_profile
+from customer_metrics;
