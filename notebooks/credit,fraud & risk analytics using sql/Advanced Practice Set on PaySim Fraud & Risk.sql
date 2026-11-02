@@ -619,8 +619,6 @@ FROM paysim
 WHERE UPPER(type) = 'CASH_OUT';
 
 --33. Incremental nightly fraud scoring
--- Q53: Process only new transactions in a nightly batch job
-
 WITH new_transactions AS
 (
     SELECT *
@@ -791,7 +789,10 @@ SELECT
     ) AS rolling_avg
 FROM transactions;
 /*40.
-
+Write a single query that assembles an investigator-ready case file for one account:
+total transaction count and volume, its largest single transaction, its fraud-flag history, and
+any TRANSFER → CASH_OUT chain it took part in — everything a human reviewer would want
+on one screen before deciding whether to escalate.
 */
 WITH account_input AS (
     SELECT 'C840083671'::VARCHAR(50) AS account_id
