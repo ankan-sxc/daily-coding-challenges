@@ -187,30 +187,85 @@ GROUP BY payment_method,
 ORDER BY payment_method,
          average_purchase_value desc;
 --Q8.Bucket users into age bands (<25, 25–40, 40–60, 60+) and show fraud rate per band.
-SELECT CASE
-          WHEN u.age < 25 THEN 'Early 20s'
-		  WHEN u.age between 25 and < 40 THEN 'Mid 40s'
-		  when u.age between 40 and < 60 THEN 'Late 40s'
-		  else 'Senior Citizen'
-	   END as age_bands,
-	   count(transaction_id)as total_transactions,
-	   sum(case when t.class=1 then 1 else 0 end) as total_fraud_transactions,
-	   (100.0*sum(case when t.class=1 then 1 else 0 end))/nullif(count(*),0) as fraud_rate
-	   
+WITH age_segmented AS (
+    SELECT
+        t.transaction_id,
+        t.class,
+
+        CASE
+            WHEN u.age IS NULL THEN 'Unknown'
+            WHEN u.age < 0 THEN 'Invalid Age'
+            WHEN u.age < 25 THEN 'Under 25'
+            WHEN u.age < 40 THEN '25-39'
+            WHEN u.age < 60 THEN '40-59'
+            ELSE '60+'
+        END AS age_bands
+
+    FROM transactions AS t
+
+    INNER JOIN users AS u
+        ON t.user_id = u.user_id
+),
+
+fraud_by_age AS (
+    SELECT
+        age_bands,
+
+        COUNT(transaction_id) AS total_transactions,
+
+        SUM(
+            CASE WHEN class = 1 THEN 1 ELSE 0 END
+        ) AS total_fraud_transactions,
+
+        ROUND(
+            100.0 * SUM(
+                CASE WHEN class = 1 THEN 1 ELSE 0 END
+            ) / NULLIF(COUNT(*), 0),
+            2
+        ) AS fraud_rate
+
+    FROM age_segmented
+
+    GROUP BY age_bands
+)
+
+SELECT *
+FROM fraud_by_age
+
+ORDER BY
+    CASE
+        WHEN age_bands = 'Under 25' THEN 1
+        WHEN age_bands = '25-39' THEN 2
+        WHEN age_bands = '40-59' THEN 3
+        WHEN age_bands = '60+' THEN 4
+        WHEN age_bands = 'Unknown' THEN 5
+        WHEN age_bands = 'Invalid Age' THEN 6
+    END;
+--Date:09/11/2026
+--Q9.Top 10 merchants by total refund amount in the trailing 90 days.
+SELECT t.merchant_id,
+       m.merchant_name,
+	   sum(r.refund_amount) as total_refund_amount
+FROM refunds AS r
+inner join transactions t on r.transaction_id=t.transaction_id
+left join merchants m on t.merchant_id=m.merchant_id
+Where r.refunded_at >= CURRENT_TIMESTAMP - INTERVAL '90 days' AND r.refunded_at <= CURRENT_TIMESTAMP
+GROUP BY t.merchant_id,
+         m.merchant_name
+ORDER BY total_refund_amount desc nulls last,
+         t.merchant_id asc
+LIMIT 10;
+--Q10.Fraud rate by country, restricted to countries with 500+ transactions.
+SELECT m.country,
+       COUNT(t.transaction_id) AS total_transactions,
+       SUM(CASE WHEN t.class = 1 THEN 1 ELSE 0 END) AS total_fraud_transactions,
+	   ROUND(100.0 * SUM(CASE WHEN t.class = 1 THEN 1 ELSE 0 END) / NULLIF(COUNT(t.transaction_id), 0), 2) AS fraud_rate
 FROM transactions AS t
-
-INNER JOIN users AS u
-ON t.user_id=u.user_id
+INNER JOIN merchants AS m
+    ON t.merchant_id = m.merchant_id
 GROUP BY
-       CASE
-          WHEN u.age < 25 THEN 'Early 20s'
-		  WHEN u.age between 25 and < 40 THEN 'Mid 40s'
-		  when u.age between 40 and < 60 THEN 'Late 40s'
-		  else 'Senior Citizen'
-	   END as age_bands,
-
-ORDER BY age_bands;
-
-
-
-    
+    m.country
+HAVING
+    COUNT(t.transaction_id) >= 500
+ORDER BY
+    fraud_rate DESC;
