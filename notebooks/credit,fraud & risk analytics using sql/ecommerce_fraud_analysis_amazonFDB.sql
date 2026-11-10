@@ -269,3 +269,94 @@ HAVING
     COUNT(t.transaction_id) >= 500
 ORDER BY
     fraud_rate DESC;
+--Date:10/11/2026
+--Q11:For each device_type , count distinct users and fraud rate.
+SELECT d.device_type,
+       count(distinct t.user_id) as total_distinct_users,
+	   count(t.transaction_id) as total_transaction_id,
+	   sum(case when t.class=1 then 1 else 0 end) as total_fraudulent_txn,
+	   round((100.0*sum(case when t.class=1 then 1 else 0 end))/nullif(count(transaction_id),0),2) as fraud_rate
+FROM transactions AS t
+INNER JOIN devices d 
+on t.device_id=d.device_id
+GROUP BY d.device_type
+ORDER BY fraud_rate;
+--Q12.Monthly fraud-rate trend for 2026: year-month, fraud_count, total_count, fraud_rate.
+SELECT date_trunc('month',purchase_time) as month_of_purchase,
+       sum(case when class=1 then 1 else 0 end) as total_fraudulent_txn,
+	   count(*) as total_fraud_txn,
+	   round((100.0*sum(case when class=1 then 1 else 0 end))/nullif(count(*),0),2) as fraud_rate
+FROM transactions AS t
+WHERE purchase_time >= TIMESTAMP '2026-01-01'AND purchase_time < TIMESTAMP '2027-01-01'
+GROUP BY date_trunc('month',purchase_time) 
+ORDER BY month_of_purchase;
+--Q.13: Find users whose total spend exceeds the platform's average spend-per-user.
+SELECT user_id,
+       SUM(purchase_value) AS total_spend
+FROM transactions
+WHERE user_id IS NOT NULL
+GROUP BY user_id
+HAVING SUM(purchase_value) > (SELECT AVG(total_spend)
+                              FROM (SELECT user_id,
+                                   SUM(purchase_value) AS total_spend
+								   FROM transactions
+                                   WHERE user_id IS NOT NULL
+								   GROUP BY user_id) AS user_spending)
+ORDER BY total_spend DESC;
+--Q.14:Flag transactions where purchase_value is more than 3× that user's own historical average. 
+WITH historical_spending AS (
+SELECT  t1.transaction_id,
+        t1.user_id,
+        t1.purchase_time,
+        t1.purchase_value,
+        (
+            SELECT AVG(t2.purchase_value)
+            FROM transactions AS t2
+            WHERE t2.user_id = t1.user_id AND t2.purchase_time < t1.purchase_time
+        ) AS historical_avg
+FROM transactions AS t1
+)
+SELECT transaction_id,
+       user_id,
+       purchase_time,
+       purchase_value,
+       ROUND(historical_avg, 2) AS historical_avg,
+       CASE
+          WHEN historical_avg IS NULL THEN 'Insufficient History'
+          WHEN purchase_value > 3 * historical_avg THEN 'Flagged'
+          ELSE 'Normal'
+       END AS anomaly_flag
+FROM historical_spending
+ORDER BY user_id, 
+         purchase_time;
+--Q.15: List merchants whose refund rate exceeds the platform-wide average refund rate.
+SELECT t.merchant_id,
+       m.merchant_name,
+       COUNT(DISTINCT t.transaction_id) AS total_transactions,
+       COUNT(DISTINCT r.transaction_id) AS refunded_transactions,
+	   ROUND(100.0 * COUNT(DISTINCT r.transaction_id)
+        / NULLIF(COUNT(DISTINCT t.transaction_id), 0),2) AS refund_rate
+FROM transactions AS t
+LEFT JOIN refunds AS r
+     ON t.transaction_id = r.transaction_id
+LEFT JOIN merchants AS m
+     ON t.merchant_id = m.merchant_id
+GROUP BY t.merchant_id,
+    m.merchant_name
+
+HAVING
+    1.0 * COUNT(DISTINCT r.transaction_id)
+    / NULLIF(COUNT(DISTINCT t.transaction_id), 0)
+    >
+    (
+        SELECT
+            1.0 * COUNT(DISTINCT r2.transaction_id)
+            / NULLIF(COUNT(DISTINCT t2.transaction_id), 0)
+
+        FROM transactions AS t2
+
+        LEFT JOIN refunds AS r2
+             ON t2.transaction_id = r2.transaction_id
+    )
+
+ORDER BY refund_rate DESC;
