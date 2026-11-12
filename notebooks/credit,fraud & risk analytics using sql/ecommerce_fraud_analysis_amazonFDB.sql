@@ -360,3 +360,45 @@ HAVING
     )
 
 ORDER BY refund_rate DESC;
+--Date:12/11/2026
+--Q16. Find users who signed up in the last 7 days whose first transaction value sits in the
+--top 1% platform-wide. 
+WITH platform_threshold AS 
+(
+SELECT
+     percentile_cont(0.99) within group (order by purchase_value) as percentile_99
+FROM transactions
+),
+
+ranked_transactions AS 
+(
+SELECT  t.transaction_id,
+        t.user_id,
+        t.purchase_time,
+        t.purchase_value,
+		row_number() over (partition by t.user_id order by t.purchase_time asc null last,t.transaction_id asc) as rank_purchase_time
+FROM transactions AS t
+WHERE t.user_id IS NOT NULL
+),
+first_transactions 
+AS 
+(
+SELECT *
+FROM ranked_transactions
+WHERE rank_purchase_time=1
+)
+
+SELECT u.user_id,
+       u.signup_time,
+	   ft.transaction_id,
+	   ft.purchase_value
+FROM users AS u
+INNER JOIN first_transactions AS ft
+    ON u.user_id = ft.user_id
+CROSS JOIN platform_threshold AS p
+WHERE u.signup_time >= CURRENT_TIMESTAMP - INTERVAL '7 days'
+  AND ft.purchase_time >= u.signup_time
+  AND u.signup_time <= CURRENT_TIMESTAMP
+  AND ft.purchase_value >= p.percentile_99
+ORDER BY ft.purchase_value desc;
+    
