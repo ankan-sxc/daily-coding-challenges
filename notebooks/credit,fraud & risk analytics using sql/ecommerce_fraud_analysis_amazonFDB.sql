@@ -401,4 +401,231 @@ WHERE u.signup_time >= CURRENT_TIMESTAMP - INTERVAL '7 days'
   AND u.signup_time <= CURRENT_TIMESTAMP
   AND ft.purchase_value >= p.percentile_99
 ORDER BY ft.purchase_value desc;
+--Date:13/11/2026
+--Q.17:Identify transactions from an ip_address also used by 3+ other distinct 
+--distinct user_id.
+SELECT transaction_id,
+       user_id,
+	   ip_address,
+	   purchase_time,
+	   purchase_value
+FROM transactions AS t
+WHERE t.ip_address IN 
+(
+SELECT ip_address
+FROM transactions
+WHERE ip_address is not null
+GROUP BY ip_address
+HAVING count(distinct user_id )>= 4
+)
+ORDER BY ip_address,purchase_time;
+--Q.18: Find users flagged fraud (class = 1) whootherwise have 10+ prior clean, approved transactions — 
+--candidates for false-positive review. 
+WITH flagged_transactions AS (
+ SELECT
+        t1.user_id,
+        t1.transaction_id AS flagged_transaction_id,
+        t1.purchase_time AS flagged_at,
+        t1.purchase_value,
+
+        (
+            SELECT COUNT(*)
+            FROM transactions AS t2
+            WHERE t2.user_id = t1.user_id
+              AND t2.purchase_time < t1.purchase_time
+              AND t2.class = 0
+              AND EXISTS (
+                  SELECT 1
+                  FROM payments AS p
+                  WHERE p.transaction_id = t2.transaction_id
+                    AND p.payment_status = 'approved'
+                    AND p.attempted_at < t1.purchase_time
+              )
+        ) AS prior_clean_approved_count
+
+    FROM transactions AS t1
+
+    WHERE t1.class = 1
+      AND NOT EXISTS (
+          SELECT 1
+          FROM transactions AS t3
+          WHERE t3.user_id = t1.user_id
+            AND t3.purchase_time < t1.purchase_time
+            AND t3.class = 1
+      )
+)
+
+SELECT
+    user_id,
+    flagged_transaction_id,
+    flagged_at,
+    purchase_value,
+    prior_clean_approved_count
+
+FROM flagged_transactions
+
+WHERE prior_clean_approved_count >= 10
+
+ORDER BY flagged_at DESC;
+--Q.19:For each user, compute the gap in minutes betweenconsecutive transactions.
+WITH transaction_history AS (
+    SELECT
+        t.user_id,
+        t.transaction_id,
+        t.purchase_time,
+        t.purchase_value,
+
+        LAG(t.purchase_time) OVER (
+            PARTITION BY t.user_id
+            ORDER BY t.purchase_time, t.transaction_id
+        ) AS previous_purchase_time
+
+    FROM transactions AS t
+    WHERE t.purchase_time IS NOT NULL
+)
+
+SELECT
+    user_id,
+    transaction_id,
+    purchase_time,
+    previous_purchase_time,
+
+    ROUND(
+        EXTRACT(
+            EPOCH FROM (purchase_time - previous_purchase_time)
+        ) / 60.0,
+        2
+    ) AS gap_minutes
+
+FROM transaction_history
+
+ORDER BY
+    user_id,
+    purchase_time,
+    transaction_id;
+--Q.20: Rank each user's transactions by purchase_value descending. 
+SELECT
+    user_id,
+    transaction_id,
+    purchase_value,
+    purchase_time,
+	rank() over (partition by user_id order by purchase_value desc) as purchase_value_rank
+FROM transactions
+ORDER BY
+    user_id,
+    purchase_value_rank,
+    transaction_id;
+--Q.21:7-day rolling sum of transaction count and value per user.
+SELECT
+    user_id,
+    transaction_id,
+    purchase_time,
+    purchase_value,
+	count(*) over (partition by user_id order by purchase_time range between interval '7 days' preceding 
+	and current row) as rolling_7d_transaction_count,
+	sum(purchase_value) over (partition by user_id order by purchase_time range between interval '7 days' preceding 
+	and current row) as rolling_7d_purchase_amount
+FROM transactions
+WHERE purchase_time IS NOT NULL
+ORDER BY user_id,
+         purchase_time,
+         transaction_id;
+--Q.22: For each merchant, compute each transaction's percentile rank by value to surface outliers. 
+SELECT
+    merchant_id,
+    transaction_id,
+    purchase_time,
+    purchase_value,
+	percent_rank() over (partition by merchant_id order by purchase_value ) as transaction_percentile_rank
+FROM transactions
+WHERE purchase_value IS NOT NULL
+ORDER BY
+    merchant_id,
+    transaction_percentile_rank DESC,
+    transaction_id;
+--Q.23: Find each user's first transaction and compare its value to how old the account was at that purchase.
+WITH ranked_transactions AS 
+(
+SELECT  t.user_id,
+        t.transaction_id,
+        t.purchase_time,
+        t.purchase_value,
+		row_number() over (partition by t.user_id order by t.purchase_time,t.transaction_id) as ranked_txn
+FROM transactions AS t
+WHERE t.purchase_time IS NOT NULL
+)
+SELECT
+    u.user_id,
+    u.signup_time,
+    rt.transaction_id AS first_transaction_id,
+    rt.purchase_time AS first_purchase_time,
+    rt.purchase_value AS first_purchase_value,
+	round(extract(epoch from (rt.purchase_time - u.signup_time))/3600.0,2) as account_age_hours
+
+FROM ranked_transactions AS rt
+INNER JOIN users AS u
+    ON rt.user_id = u.user_id
+WHERE rt.ranked_txn=1
+ORDER BY u.user_id;
+--Q.24:Running (cumulative) fraud rate ordered by date
+WITH daily_summary AS 
+(
+SELECT  purchase_time::date AS d,
+        COUNT(*) AS daily_transactions,
+        COUNT(*) FILTER (WHERE class = 1) AS daily_fraud
+FROM transactions
+WHERE purchase_time IS NOT NULL
+GROUP BY purchase_time::date
+),
+cumulative_summary AS 
+(
+SELECT d,
+       SUM(daily_transactions) OVER (ORDER BY d ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_transactions,
+	   SUM(daily_fraud) OVER (ORDER BY d ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_fraud
+FROM daily_summary
+)
+SELECT
+    d AS transaction_date,
+    cumulative_transactions,
+    cumulative_fraud,
+	ROUND(100.0 * cumulative_fraud/ NULLIF(cumulative_transactions, 0),2 ) AS cumulative_fraud_rate_pct
+FROM cumulative_summary
+ORDER BY transaction_date;
+--Q.25:Flag users with 5+ transactions in any rolling 1-hour window.
+-- Q25: Flag users with 5+ transactions in a rolling 1-hour window
+WITH transaction_velocity AS 
+(
+SELECT user_id,
+       transaction_id,
+       purchase_time,
+       purchase_value,
+       COUNT(*) OVER (PARTITION BY user_id ORDER BY purchase_time RANGE BETWEEN INTERVAL '1 hour' PRECEDING
+                      AND CURRENT ROW) AS txn_count_1h
+FROM transactions
+WHERE purchase_time IS NOT NULL  AND user_id IS NOT NULL
+)
+SELECT
+    user_id,
+    transaction_id,
+    purchase_time,
+    purchase_value,
+    txn_count_1h,
+    'High Velocity' AS velocity_flag
+FROM transaction_velocity
+WHERE txn_count_1h >= 5
+ORDER BY user_id,
+         purchase_time,
+         transaction_id;
+
+
+
+
+
+
+
+
+
+
+
+
     
