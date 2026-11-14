@@ -592,7 +592,6 @@ SELECT
 FROM cumulative_summary
 ORDER BY transaction_date;
 --Q.25:Flag users with 5+ transactions in any rolling 1-hour window.
--- Q25: Flag users with 5+ transactions in a rolling 1-hour window
 WITH transaction_velocity AS 
 (
 SELECT user_id,
@@ -616,16 +615,156 @@ WHERE txn_count_1h >= 5
 ORDER BY user_id,
          purchase_time,
          transaction_id;
+--Q.26: Flag "high-value order from a new account": purchase_value > 300 within 24 hours of signup_time . 
+-- Return user_id ,transaction_id , hours since signup.
+SELECT
+    t.user_id,
+    t.transaction_id,
+	ROUND(EXTRACT(EPOCH from (t.purchase_time - u.signup_time))/3600.0,2) as hours_since_signup
+FROM transactions AS t
+INNER JOIN users AS u ON t.user_id = u.user_id
+WHERE t.purchase_value > 300 AND t.purchase_time >= u.signup_time
+AND t.purchase_time <= u.signup_time + INTERVAL '24 hours'
+ORDER BY t.user_id,
+         t.purchase_time;
+--Q.27: Flag transactions where shipping_address <> billing_address and the value is in that user's top decile.
+WITH ranked_transactions AS 
+(
+SELECT  user_id,
+        transaction_id,
+        purchase_time,
+        purchase_value,
+        shipping_address,
+        billing_address,
+		PERCENT_RANK() OVER (PARTITION BY user_id ORDER BY purchase_value asc) as value_percentile_rank
+FROM transactions
+WHERE purchase_value IS NOT NULL
+)
 
+SELECT
+    user_id,
+    transaction_id,
+    purchase_value,
+    value_percentile_rank,
+    'Address Mismatch + High Value' AS risk_flag
 
+FROM ranked_transactions
+WHERE shipping_address <> billing_address  AND value_percentile_rank>=0.90
+ORDER BY user_id,
+         value_percentile_rank DESC,
+         transaction_id;
+--Q.28: For each user, count failed payments followed by an approval 
+-- within 10 minutes — a card-testing pattern.
+WITH payment_history AS 
+(
+SELECT  t.user_id,
+        p.payment_id,
+        p.transaction_id,
+        p.payment_status,
+        p.attempted_at
+FROM payments AS p
+INNER JOIN transactions t ON p.transaction_id = t.transaction_id
+WHERE p.attempted_at IS NOT NULL
+)
+SELECT
+    p1.user_id,
+	count(*) as failed_payment_attempts
+FROM payment_history AS p1
+WHERE p1.payment_status = 'failed'
+AND EXISTS (
+      SELECT 1
+      FROM payment_history AS p2
+	  WHERE p2.user_id = p1.user_id
+      AND p2.payment_status = 'approved'
+      AND p2.attempted_at > p1.attempted_at
+      AND p2.attempted_at <=
+          p1.attempted_at + INTERVAL '10 minutes'
+)
+GROUP BY p1.user_id
+ORDER BY failed_payment_attempts DESC;
+--Q.29: Using CASE WHEN , bucket transactions per payment_method into declined-only,
+-- declined-then-approved, approved-first-try
+WITH payment_summary AS (
+    SELECT
+        t.transaction_id,
+        t.payment_method,
 
+        COUNT(*) FILTER (
+            WHERE p.payment_status = 'declined'
+        ) AS declined_count,
 
+        COUNT(*) FILTER (
+            WHERE p.payment_status = 'approved'
+        ) AS approved_count,
 
+        MIN(p.attempt_no) FILTER (
+            WHERE p.payment_status = 'declined'
+        ) AS first_declined_attempt,
 
+        MIN(p.attempt_no) FILTER (
+            WHERE p.payment_status = 'approved'
+        ) AS first_approved_attempt,
 
+        MIN(p.attempt_no) AS first_attempt
 
+    FROM transactions AS t
+    INNER JOIN payments AS p
+        ON t.transaction_id = p.transaction_id
 
+    GROUP BY
+        t.transaction_id,
+        t.payment_method
+),
 
+classified_transactions AS (
+    SELECT
+        transaction_id,
+        payment_method,
 
+        CASE
+            WHEN declined_count > 0
+                 AND approved_count = 0
+            THEN 'declined-only'
 
-    
+            WHEN first_approved_attempt = first_attempt
+            THEN 'approved-first-try'
+
+            WHEN first_declined_attempt < first_approved_attempt
+            THEN 'declined-then-approved'
+
+            ELSE 'other'
+        END AS payment_outcome
+
+    FROM payment_summary
+)
+
+SELECT
+    payment_method,
+
+    COUNT(*) FILTER (
+        WHERE payment_outcome = 'declined-only'
+    ) AS declined_only,
+
+    COUNT(*) FILTER (
+        WHERE payment_outcome = 'declined-then-approved'
+    ) AS declined_then_approved,
+
+    COUNT(*) FILTER (
+        WHERE payment_outcome = 'approved-first-try'
+    ) AS approved_first_try
+
+FROM classified_transactions
+
+GROUP BY payment_method
+
+ORDER BY payment_method;
+--Q.30: Dollar-weighted fraud rate per category:SUM(purchase_value) FILTER (WHERE class = 1) / SUM(purchase_value).
+SELECT
+    product_category,
+	sum(purchase_value) as total_purchase_value,
+	sum(purchase_value) filter (where class=1) as total_fraudulent_purchase_value,
+	round((100.0*sum(purchase_value) filter (where class=1))/nullif(sum(purchase_value),0),2) as dollar_weighted_fraud_rate
+FROM transactions
+WHERE purchase_value IS NOT NULL
+GROUP BY product_category
+ORDER BY dollar_weighted_fraud_rate DESC;
