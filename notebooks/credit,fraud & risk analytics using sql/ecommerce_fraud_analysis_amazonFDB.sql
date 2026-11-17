@@ -768,3 +768,43 @@ FROM transactions
 WHERE purchase_value IS NOT NULL
 GROUP BY product_category
 ORDER BY dollar_weighted_fraud_rate DESC;
+--Date:17/11/2026
+--Q.31: Flag orders placed 1am–4am local time from a device_id first seen in the last 24 hours
+WITH device_history AS 
+(
+ SELECT
+        device_id,
+		min(purchase_time)as first_seen
+FROM transactions
+WHERE device_id IS NOT NULL
+AND purchase_time IS NOT NULL
+GROUP BY device_id
+)
+
+SELECT
+    t.transaction_id,
+    t.user_id,
+    t.device_id,
+    t.purchase_time,
+    d.first_seen,
+	ROUND(EXTRACT(EPOCH from (t.purchase_time-d.first_seen))/3600.0,2) as hour_since_first_seen
+FROM transactions AS t
+INNER JOIN device_history AS d
+    ON t.device_id = d.device_id
+
+WHERE 
+    t.purchase_time IS NOT NULL
+      -- Orders between 01:00 and 04:00 (exclusive)
+    AND EXTRACT(HOUR FROM t.purchase_time) >= 1
+    AND EXTRACT(HOUR FROM t.purchase_time) < 4
+
+    -- Device first observed within the preceding 24 hours
+    AND t.purchase_time >= d.first_seen
+    AND t.purchase_time <=
+        d.first_seen + INTERVAL '24 hours'
+
+ORDER BY
+    t.purchase_time,
+    t.transaction_id;
+--Topics:Velocity checks (Q.32-Q.35)
+--32. Users with more than 3 transactions in a single calendar day.
